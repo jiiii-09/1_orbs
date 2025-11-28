@@ -1,7 +1,9 @@
-let mic;
-let fft;
-let vol = 0;
-let smoothVol = 0;
+// -----------------------------
+// 🔵 WebSocket Receiver Mode
+// -----------------------------
+let socket;
+let vol = 0;          // ← sender가 보내주는 값
+let smoothVol = 0;    // ← 화면용 부드러운 볼륨값
 
 let particles = [];
 
@@ -9,55 +11,59 @@ let particles = [];
 let c1, c2, c3, c4;
 
 function setup() {
-  userStartAudio();
   createCanvas(windowWidth, windowHeight);
   background('#000000');
 
   textAlign(CENTER, CENTER);
   textSize(28);
   fill(120);
-  text("화면을 터치해서 시작하세요 🎤", width / 2, height / 2);
+  text("Receiver Mode: Waiting for Audio...", width / 2, height / 2);
 
   // NASA / thermal-like palette
-  c1 = color('#1B0050'); // deep purple
-  c2 = color('#7A1C8A'); // magenta-ish
-  c3 = color('#FF6B1A'); // orange
-  c4 = color('#FFFFFF'); // white
+  c1 = color('#1B0050'); 
+  c2 = color('#7A1C8A'); 
+  c3 = color('#FF6B1A'); 
+  c4 = color('#FFFFFF'); 
 
-  mic = new p5.AudioIn();
-  mic.start(onMicStart, onMicError);
-}
+  // -----------------------------
+  // 🔥 WebSocket 연결
+  // -----------------------------
+  socket = new WebSocket("ws://192.168.100.100:8080"); // IP 업데이트 필요하면 바꿔줘!
 
-function onMicStart() {
-  console.log("🎤 마이크 준비 완료");
-  fft = new p5.FFT();
-  fft.setInput(mic);
-}
+  socket.onopen = () => {
+    console.log("Receiver connected to WebSocket server");
+  };
 
-function onMicError(err) {
-  console.error("🚫 마이크 연결 실패:", err);
+  socket.onmessage = (event) => {
+    let data = JSON.parse(event.data);
+
+    if (data.type === "audio") {
+      vol = data.volume;       // 🔵 sender → 서버 → 여기로 전달됨
+      // sender FFT 필요하면 data.fft 도 받음 (지금은 사용 X)
+    }
+  };
 }
 
 function draw() {
-console.log('vol', vol, 'smoothVol', smoothVol);
-
   background('#000000');
 
-  if (mic.enabled && fft) {
-    vol = mic.getLevel();
-    smoothVol = lerp(smoothVol, vol, 0.15);
+  // -----------------------------
+  // 🔥 sender로부터 받은 vol로 동작
+  // -----------------------------
+  smoothVol = lerp(smoothVol, vol, 0.15);
 
-    let energy = smoothVol * 1000;
+  // energy는 vol에 비례
+  let energy = smoothVol * 1000;
 
-    if (energy > 5) {
-      createParticles(int(energy * 0.5));
-    }
+  if (energy > 5) {
+    createParticles(int(energy * 0.5));
+  }
 
-    for (let i = particles.length - 1; i >= 0; i--) {
-      particles[i].update();
-      particles[i].display();
-      if (particles[i].isDead()) particles.splice(i, 1);
-    }
+  // display all particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].display();
+    if (particles[i].isDead()) particles.splice(i, 1);
   }
 }
 
@@ -82,10 +88,10 @@ function createShards(x, y, parentSize) {
   let shardCount = int(random(8, 14));
 
   for (let i = 0; i < shardCount; i++) {
-    particles.push(new ShardParticle(x, y, parentSize));
+    particles.push(new ShardParticle(x, y, parentageSize));
   }
 
-  // ★ VERY MINI PARTICLES ★ (tiny spark dust!)
+  // tiny dust sparkles
   for (let i = 0; i < 12; i++) {
     particles.push(new MiniParticle(x, y, parentSize));
   }
@@ -95,7 +101,6 @@ function createShards(x, y, parentSize) {
 // 🎇 NASA Thermal Color Mapping
 // -------------------------------------------------
 function thermalColor(t) {
-  // t: 0.0 ~ 1.0
   if (t < 0.33) {
     return lerpColor(c1, c2, t / 0.33);
   } else if (t < 0.66) {
@@ -140,9 +145,6 @@ class Particle {
   }
 }
 
-// -------------------------------------------------
-// ⭐ Medium Shard Particles
-// -------------------------------------------------
 class ShardParticle {
   constructor(x, y, parentSize) {
     this.pos = createVector(
@@ -175,9 +177,6 @@ class ShardParticle {
   }
 }
 
-// -------------------------------------------------
-// ⭐ VERY MINI Dust Particles (Tiny sparkles)
-// -------------------------------------------------
 class MiniParticle {
   constructor(x, y, parentSize) {
     this.pos = createVector(
@@ -186,7 +185,7 @@ class MiniParticle {
     );
 
     this.vel = p5.Vector.random2D().mult(random(0.5, 2));
-    this.size = random(1, 3);     // ★ super tiny!
+    this.size = random(1, 3);
     this.alpha = 180;
 
     let t = constrain(smoothVol * 15, 0, 1);
@@ -209,9 +208,6 @@ class MiniParticle {
     return this.alpha <= 0;
   }
 }
-
-// -------------------------------------------------
-
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
